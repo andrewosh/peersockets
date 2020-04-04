@@ -1,6 +1,0 @@
-syntax = "proto3";
-
-message SupportedExtensionsMessage {
-  repeated string added = 1;
-  repeated string removed = 2;
-}

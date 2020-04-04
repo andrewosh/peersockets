@@ -17,9 +17,6 @@ class TopicHandle {
     if (Buffer.isBuffer(remoteKey)) remoteKey = remoteKey.toString('hex')
     this._topic.send(remoteKey, msg)
   }
-  broadcast (msg) {
-    this._topic.broadcast(msg)
-  }
 }
 
 class Topic extends EventEmitter {
@@ -47,6 +44,13 @@ class Topic extends EventEmitter {
     return extension
   }
 
+  removeExtension (remoteKey) {
+    const extension = this._extensions.get(remoteKey)
+    if (!extension) return
+    extension.destroy()
+    this._extensions.delete(remoteKey)
+  }
+
   createHandle (opts = {}) {
     const handle = new TopicHandle(this, opts)
     this._handles.push(handle)
@@ -60,7 +64,7 @@ class Topic extends EventEmitter {
 
   send (remoteKey, msg) {
     const extension = this._extensions.get(remoteKey)
-    if (!extension) return
+    if (!extension) throw new Error('Topic extension not registered for peer.')
     extension.send(msg)
   }
 
@@ -75,110 +79,59 @@ class Topic extends EventEmitter {
 }
 
 class Peersockets extends EventEmitter {
-  static EXTENSION_PREFIX = 'peersockets/v0/'
-
   constructor (networker) {
     super()
     this.networker = networker
 
     this.topicsByName = new Map()
     this.streamsByKey = new Map()
+    this.streamsByDiscoveryKey = new Map()
 
-    this._joinListener = null
-    this._leaveListener = null
-    this.start()
+    this._joinListener = this._onjoin.bind(this)
+    this.networker.on('handshake', this._joinListener)
   }
 
-  _registerCoordinationExtension (remoteKey, stream) {
-    const onmessage = (msg) => {
-      let supportedTopics = upsert(this.supportedTopicsByPeer, remoteKey, () => new Set())
-      if (msg.added) {
-        for (const topicName of msg.added) {
-          let supportedPeers = upsert(this.supportedPeersByTopic, remoteKey, () => new Set())
-          supportedTopics.add(topicName)
-          supportedPeers.add(remoteKey)
-          const topics = this.topicsByName.get(topicName)
-          if (!topics) continue
-          for (const topic of topics) {
-            topic.addPeer(remoteKey, stream)
-          }
-        }
-      }
-      if (msg.removed) {
-        for (const topicName of msg.removed) {
-          let supportedPeers = this.supportedPeersByTopic.get(remoteKey)
-          if (supportedPeers) supportedPeers.delete(remoteKey)
-          this.supportedTopicsByPeer.delete(remoteKey)
-          const topics = this.topicsByName.get(topicName)
-          if (!topics) continue
-          for (const topic of topics) {
-            topic.remotePeer(remoteKey, stream)
-          }
-        }
-      }
-    }
-    const coordinator = {
-      encoding: messages.SupportedExtensionsMessage,
-      onmessage
-    }
-    const extension = stream.registerExtension(Peersockets.COORDINATOR_EXTENSION, coordinator)
-    this.coordinatorsByKey.set(remoteKey, extension)
-    return extension
-  }
-
-  _onjoin (stream) {
+  _onjoin (stream, peerInfo) {
     const remoteKey = stream.remotePublicKey
     const keyString = remoteKey.toString('hex')
-    this.streamsByKey.set(keyString, stream)
     stream.on('close', this._onleave.bind(this, stream))
-    const coordinator = this._registerCoordinationExtension(keyString, stream)
+    this.streamsByKey.set(keyString, stream)
+    if (peerInfo && peerInfo.topic) {
+      const dkeyStreams = upsert(this.streamsByDiscoveryKey, peerInfo.topic.toString('hex'), () => [])
+      dkeyStreams.push(stream)
+    }
     // Register all topic extensions on the new stream
     for (const [, topic] of this.topicsByName) {
       topic.registerExtension(stream)
     }
-    // Notify the remote of all the extensions we support.
-    coordinator.send({
-      added: [...this.topicsByName].map(([k,]) => k)
-    })
   }
 
-  _onleave (stream, _, finishedHandshake) {
+  _onleave (stream, peerInfo, finishedHandshake) {
     if (!finishedHandshake) return
     const remoteKey = stream.remotePublicKey
     const keyString = remoteKey.toString('hex')
     const supportedTopics = this.supportedTopicsByPeer.get(keyString)
-    if (supportedTopics) {
-      for (const topicName of supportedTopics) {
-        const topic = this.topicsByName.get(topicName)
-        if (!topic) continue
-        topic.removePeer(keyString, stream)
-      }
+    for (const [, topic] of this.topicsByName) {
+      topic.removeExtension(keyString)
     }
     this.streamsByKey.delete(keyString)
+    if (peerInfo && peerInfo.topic) {
+      const dkeyStreams = this.streamsByDiscoveryKey.get(peerInfo.topic.toString('hex'))
+      if (!dkeyStreams) return
+      dkeyStreams.splice(dkeyStreams.indexOf(stream), 1)
+    }
   }
 
   join (topicName, opts) {
     let topic = this.topicsByName.get(topicName)
-    if (topic) return topic
+    if (topic) return topic.createHandle(opts)
     topic = new Topic(topicName)
     this.topicsByName.set(topicName, topic)
     // Register the topic extension on all streams.
     for (const [,stream] of this.streamsByKey) {
       topic.registerExtension(stream)
     }
-    // Add all supported peers to the topic
-    const supportedPeers = this.supportedPeersByTopic.get(topicName)
-    if (supportedPeers && supportedPeers.size) {
-      for (const peerKey of supportedPeers) {
-        topic.addPeer(peerKey, this.streamsByKey.get(peerKey))
-      }
-    }
-    // Notify all peers that we support the topic.
-    for (const [, coordinator] of this.coordinatorsByKey) {
-      coordinator.send({
-        added: [topicName]
-      })
-    }
+    return topic.createHandle(opts)
   }
 
   leave (topicName) {
@@ -186,30 +139,21 @@ class Peersockets extends EventEmitter {
     if (!topic) return
     // Close the topic (this destroys every stream's per-topic extension)
     topic.close()
-    // Notify all peers that we support the topic.
-    for (const [, coordinator] of this.coordinatorsByKey) {
-      coordinator.send({
-        removed: [topicName]
-      })
-    }
-
-    this.supportedPeersByTopic.delete(topicName)
-    for (const [, topicSet] of this.supportedTopicsByPeer) {
-      topicSet.delete(topicName)
-    }
-  }
-
-  start () {
-    if (this._joinListener) return
-    this._joinListener = this._onjoin.bind(this)
-    this.networker.on('handshake', this._joinListener)
+    this.topicsByName.delete(topicName)
   }
 
   stop () {
-    if (this._joinListener) {
-      this.networker.removeListener('handshake', this._joinListener)
-      this._joinListener = null
+    if (!this._joinListener) return
+    this.networker.removeListener('handshake', this._joinListener)
+    this._joinListener = null
+  }
+
+  listPeers (discoveryKey) {
+    if (!discoveryKey) {
+      return [...this.streamsByKey].map(([,stream]) => stream)
     }
+    if (Buffer.isBuffer(discoveryKey)) discoveryKey = discoveryKey.toString('hex')
+    return this.streamsByDiscoveryKey.get(discoveryKey)
   }
 }
 Peersockets.EXTENSION_PREFIX = 'peersockets/v0/'
