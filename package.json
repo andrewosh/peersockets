@@ -1,0 +1,35 @@
+{
+  "name": "peersockets",
+  "version": "1.0.0",
+  "description": "Directly connect to peers via hyperswarm (or an API-compatible alternative). ",
+  "main": "index.js",
+  "scripts": {
+    "test": "tape test/*.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/andrewosh/peersockets.git"
+  },
+  "keywords": [
+    "hyperswarm",
+    "sockets"
+  ],
+  "author": "Andrew Osheroff <andrewosh@gmail.com>",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/andrewosh/peersockets/issues"
+  },
+  "homepage": "https://github.com/andrewosh/peersockets#readme",
+  "devDependencies": {
+    "@hyperswarm/dht": "^3.5.2",
+    "corestore": "^5.1.1",
+    "hypercore-crypto": "^1.0.0",
+    "random-access-memory": "^3.1.1",
+    "standard": "^14.3.3",
+    "tape": "^4.13.2"
+  },
+  "dependencies": {
+    "protocol-buffers-encodings": "^1.1.0",
+    "streamx": "^2.6.0"
+  }
+}
