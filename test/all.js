@@ -180,7 +180,7 @@ test('leaving a topic removes the extension', async t => {
   t.end()
 })
 
-test.only('can list peers for a discovery key', async t => {
+test('can list peers for a discovery key', async t => {
   const { store: store1, networker: networker1 } = await create()
   const { store: store2, networker: networker2 } = await create()
   const ps1 = new Peersockets(networker1)

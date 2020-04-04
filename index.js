@@ -1,6 +1,4 @@
 const { EventEmitter } = require('events')
-const messages = require('./lib/messages')
-const streamx = require('streamx')
 
 class TopicHandle {
   constructor (topic, opts = {}) {
