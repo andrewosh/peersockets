@@ -3,8 +3,6 @@ const { EventEmitter } = require('events')
 class TopicHandle {
   constructor (topic, opts = {}) {
     this._topic = topic
-    this.onjoin = opts.onjoin
-    this.onleave = opts.onleave
     this.onmessage = opts.onmessage
     this.onclose = opts.onclose
   }
@@ -134,10 +132,10 @@ class Peersockets extends EventEmitter {
 
   leave (topicName) {
     let topic = this.topicsByName.get(topicName)
-    if (!topic) return
+    if (topic) {
+    }
     // Close the topic (this destroys every stream's per-topic extension)
     topic.close()
-    this.topicsByName.delete(topicName)
   }
 
   stop () {
