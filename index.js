@@ -24,7 +24,8 @@ class Topic extends EventEmitter {
   }
 
   registerExtension (stream) {
-    const remoteKey = stream.remotePublicKey.toString('hex')
+    const remoteKey = stream.remotePublicKey
+    const keyString = remoteKey.toString('hex')
     const handlers = {
       onmessage: (msg) => {
         for (const handle of this._handles) {
@@ -36,7 +37,7 @@ class Topic extends EventEmitter {
       }
     }
     const extension = stream.registerExtension(Peersockets.EXTENSION_PREFIX + this.name, handlers)
-    this._extensions.set(remoteKey, extension)
+    this._extensions.set(keyString, extension)
     return extension
   }
 
@@ -100,7 +101,7 @@ class Peersockets extends EventEmitter {
   }
 
   _onleave (stream, info, finishedHandshake) {
-    if (!finishedHandshake || info.duplicate) return
+    if (!finishedHandshake || (info && info.duplicate)) return
     // If the stream never made it through the handshake. abort.
     const keyString = stream.remotePublicKey.toString('hex')
     for (const [, topic] of this.topicsByName) {
@@ -147,17 +148,29 @@ class Peersockets extends EventEmitter {
   watchPeers (discoveryKey, opts = {}) {
     const core = this.corestore.get({ discoveryKey })
     const watcher = new EventEmitter()
+    const peerCounts = new Map()
     const firstPeers = this.listPeers(discoveryKey) || []
     if (firstPeers) {
       for (const remoteKey of firstPeers) {
+        peerCounts.set(remoteKey.toString('hex', 1))
         opts.onjoin(remoteKey)
       }
     }
     const joinedListener = (peer) => {
-      opts.onjoin(peer.remotePublicKey)
+      const remoteKey = peer.remotePublicKey
+      updateMap(peerCounts, remoteKey.toString('hex'), old => {
+        const updated = ++old
+        if (updated === 1) opts.onjoin(remoteKey)
+        return updated
+      }, 0)
     }
     const leftListener = (peer) => {
-      opts.onleave(peer.remotePublicKey)
+      const remoteKey = peer.remotePublicKey
+      updateMap(peerCounts, remoteKey.toString('hex'), old => {
+        const updated = --old
+        if (!updated) opts.onleave(remoteKey)
+        return updated
+      } , 0)
     }
     const close = () => {
       core.removeListener('peer-add', joinedListener)
@@ -175,6 +188,10 @@ function upsert (map, key, createFn) {
   let value = createFn()
   map.set(key, value)
   return value
+}
+
+function updateMap (map, key, updateFn, defaultValue) {
+  map.set(key, updateFn(map.get(key) || defaultValue))
 }
 
 module.exports = Peersockets

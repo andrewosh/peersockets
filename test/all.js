@@ -215,9 +215,8 @@ test('can watch peers for a discovery key', async t => {
   const ps2 = new Peersockets(networker2)
   const ps3 = new Peersockets(networker3)
 
-  const joinSet = new Set()
-  const leaveSet = new Set()
-
+  let joinCount = 0
+  let leaveCount = 0
   const joins = [networker2.keyPair.publicKey, networker3.keyPair.publicKey]
   const leaves = [networker3.keyPair.publicKey, networker2.keyPair.publicKey]
 
@@ -227,10 +226,10 @@ test('can watch peers for a discovery key', async t => {
   await networker1.join(discoveryKey, { announce: true, lookup: true })
   let watcher = ps1.watchPeers(discoveryKey, {
     onjoin: (remoteKey) => {
-      joinSet.add(remoteKey.toString('hex'))
+      t.true(joins[joinCount++].equals(remoteKey))
     },
     onleave: (remoteKey) => {
-      leaveSet.add(remoteKey.toString('hex'))
+      t.true(leaves[leaveCount++].equals(remoteKey))
     }
   })
 
@@ -240,17 +239,15 @@ test('can watch peers for a discovery key', async t => {
   await networker3.join(discoveryKey, { announce: true, lookup: true })
 
   await delay(100)
-  t.same(joinSet.size, 2)
-  t.true(joinSet.has(networker2.keyPair.publicKey.toString('hex')))
-  t.true(joinSet.has(networker3.keyPair.publicKey.toString('hex')))
+  t.same(joinCount, 2)
+  t.same(leaveCount, 0)
 
   await networker3.close()
   await networker2.close()
 
   await delay(100)
-  t.same(leaveSet.size, 2)
-  t.true(leaveSet.has(networker2.keyPair.publicKey.toString('hex')))
-  t.true(leaveSet.has(networker3.keyPair.publicKey.toString('hex')))
+  t.same(joinCount, 2)
+  t.same(leaveCount, 2)
 
   await cleanup([networker1])
   t.end()
