@@ -17,12 +17,12 @@ test('static peers, single peer send', async t => {
   const ps1 = new Peersockets(networker1)
   const ps2 = new Peersockets(networker2)
   let seen = 0
-
-  const sharedKey = hypercoreCrypto.randomBytes(32)
   const topic = 'test-topic-1'
 
-  await networker1.join(sharedKey, { announce: true, lookup: true })
-  await networker2.join(sharedKey, { announce: true, lookup: true })
+  const dkey = hypercoreCrypto.randomBytes(32)
+
+  await networker1.join(dkey, { announce: true, lookup: true })
+  await networker2.join(dkey, { announce: true, lookup: true })
 
   const handle1 = ps1.join(topic)
   const handle2 = ps2.join(topic, {
@@ -31,6 +31,8 @@ test('static peers, single peer send', async t => {
       seen++
     }
   })
+
+  await delay(100)
   handle1.send(networker2.keyPair.publicKey, 'hello world!')
 
   await cleanup([networker1, networker2])
@@ -185,7 +187,6 @@ test('can list peers for a discovery key', async t => {
   const { store: store2, networker: networker2 } = await create()
   const ps1 = new Peersockets(networker1)
   const ps2 = new Peersockets(networker2)
-  let seen = 0
 
   const core1 = store1.default()
   const core2 = store2.get(core1.key)
@@ -199,10 +200,112 @@ test('can list peers for a discovery key', async t => {
 
   t.same(firstPeers.length, 1)
   t.same(secondPeers.length, 1)
-  t.true(firstPeers[0].remotePublicKey.equals(secondPeers[0].publicKey))
-  t.true(secondPeers[0].remotePublicKey.equals(firstPeers[0].publicKey))
+  t.true(firstPeers[0].equals(networker2.keyPair.publicKey))
+  t.true(secondPeers[0].equals(networker1.keyPair.publicKey))
 
   await cleanup([networker1, networker2])
+  t.end()
+})
+
+test('can watch peers for a discovery key', async t => {
+  const { store: store1, networker: networker1 } = await create()
+  const { store: store2, networker: networker2 } = await create()
+  const { store: store3, networker: networker3 } = await create()
+  const ps1 = new Peersockets(networker1)
+  const ps2 = new Peersockets(networker2)
+  const ps3 = new Peersockets(networker3)
+
+  const joinSet = new Set()
+  const leaveSet = new Set()
+
+  const joins = [networker2.keyPair.publicKey, networker3.keyPair.publicKey]
+  const leaves = [networker3.keyPair.publicKey, networker2.keyPair.publicKey]
+
+  const core1 = store1.get()
+  const discoveryKey = hypercoreCrypto.discoveryKey(core1.key)
+
+  await networker1.join(discoveryKey, { announce: true, lookup: true })
+  let watcher = ps1.watchPeers(discoveryKey, {
+    onjoin: (remoteKey) => {
+      joinSet.add(remoteKey.toString('hex'))
+    },
+    onleave: (remoteKey) => {
+      leaveSet.add(remoteKey.toString('hex'))
+    }
+  })
+
+  const core2 = store2.get(core1.key)
+  await networker2.join(discoveryKey, { announce: true, lookup: true })
+  const core3 = store3.get(core1.key)
+  await networker3.join(discoveryKey, { announce: true, lookup: true })
+
+  await delay(100)
+  t.same(joinSet.size, 2)
+  t.true(joinSet.has(networker2.keyPair.publicKey.toString('hex')))
+  t.true(joinSet.has(networker3.keyPair.publicKey.toString('hex')))
+
+  await networker3.close()
+  await networker2.close()
+
+  await delay(100)
+  t.same(leaveSet.size, 2)
+  t.true(leaveSet.has(networker2.keyPair.publicKey.toString('hex')))
+  t.true(leaveSet.has(networker3.keyPair.publicKey.toString('hex')))
+
+  await cleanup([networker1])
+  t.end()
+})
+
+test('stops watching peers when call is closed', async t => {
+  const { store: store1, networker: networker1 } = await create()
+  const { store: store2, networker: networker2 } = await create()
+  const { store: store3, networker: networker3 } = await create()
+  const ps1 = new Peersockets(networker1)
+  const ps2 = new Peersockets(networker2)
+  const ps3 = new Peersockets(networker3)
+
+  const joinSet = new Set()
+  const leaveSet = new Set()
+
+  const joins = [networker2.keyPair.publicKey, networker3.keyPair.publicKey]
+  const leaves = [networker3.keyPair.publicKey, networker2.keyPair.publicKey]
+
+  const core1 = store1.get()
+  const discoveryKey = hypercoreCrypto.discoveryKey(core1.key)
+
+  await networker1.join(discoveryKey, { announce: true, lookup: true })
+  let watcher = ps1.watchPeers(discoveryKey, {
+    onjoin: (remoteKey) => {
+      joinSet.add(remoteKey.toString('hex'))
+    },
+    onleave: (remoteKey) => {
+      leaveSet.add(remoteKey.toString('hex'))
+    }
+  })
+
+  const core2 = store2.get(core1.key)
+  await networker2.join(discoveryKey, { announce: true, lookup: true })
+  const core3 = store3.get(core1.key)
+  await networker3.join(discoveryKey, { announce: true, lookup: true })
+
+  await delay(100)
+  t.same(joinSet.size, 2)
+  const firstLeaveSize = leaveSet.size
+  const firstJoinSize = joinSet.size
+  t.true(joinSet.has(networker2.keyPair.publicKey.toString('hex')))
+  t.true(joinSet.has(networker3.keyPair.publicKey.toString('hex')))
+
+  // Close the watcher
+  watcher()
+
+  await networker3.close()
+  await networker2.close()
+
+  await delay(100)
+  t.same(leaveSet.size, firstLeaveSize)
+  t.same(joinSet.size, firstJoinSize)
+
+  await cleanup([networker1])
   t.end()
 })
 

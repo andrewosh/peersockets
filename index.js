@@ -78,43 +78,33 @@ class Peersockets extends EventEmitter {
   constructor (networker) {
     super()
     this.networker = networker
+    this.corestore = networker.corestore
 
     this.topicsByName = new Map()
     this.streamsByKey = new Map()
-    this.streamsByDiscoveryKey = new Map()
 
     this._joinListener = this._onjoin.bind(this)
+    this._leaveListener = this._onleave.bind(this)
     this.networker.on('handshake', this._joinListener)
+    this.networker.on('stream-closed', this._leaveListener)
   }
 
-  _onjoin (stream, peerInfo) {
+  _onjoin (stream, info) {
     const remoteKey = stream.remotePublicKey
     const keyString = remoteKey.toString('hex')
-    stream.on('close', this._onleave.bind(this, stream))
     this.streamsByKey.set(keyString, stream)
-    if (peerInfo && peerInfo.topic) {
-      const dkeyStreams = upsert(this.streamsByDiscoveryKey, peerInfo.topic.toString('hex'), () => [])
-      dkeyStreams.push(stream)
-    }
     // Register all topic extensions on the new stream
     for (const [, topic] of this.topicsByName) {
       topic.registerExtension(stream)
     }
   }
 
-  _onleave (stream, peerInfo, finishedHandshake) {
-    if (!finishedHandshake) return
-    const remoteKey = stream.remotePublicKey
-    const keyString = remoteKey.toString('hex')
-    const supportedTopics = this.supportedTopicsByPeer.get(keyString)
+  _onleave (stream, info, finishedHandshake) {
+    if (!finishedHandshake || info.duplicate) return
+    // If the stream never made it through the handshake. abort.
+    const keyString = stream.remotePublicKey.toString('hex')
     for (const [, topic] of this.topicsByName) {
       topic.removeExtension(keyString)
-    }
-    this.streamsByKey.delete(keyString)
-    if (peerInfo && peerInfo.topic) {
-      const dkeyStreams = this.streamsByDiscoveryKey.get(peerInfo.topic.toString('hex'))
-      if (!dkeyStreams) return
-      dkeyStreams.splice(dkeyStreams.indexOf(stream), 1)
     }
   }
 
@@ -141,15 +131,41 @@ class Peersockets extends EventEmitter {
   stop () {
     if (!this._joinListener) return
     this.networker.removeListener('handshake', this._joinListener)
+    this.networker.removeListener('stream-closed', this._leaveListener)
     this._joinListener = null
+    this._leaveListener = null
   }
 
   listPeers (discoveryKey) {
     if (!discoveryKey) {
-      return [...this.streamsByKey].map(([,stream]) => stream)
+      return [...this.streamsByKey].map(([,stream]) => stream.remotePublicKey)
     }
-    if (Buffer.isBuffer(discoveryKey)) discoveryKey = discoveryKey.toString('hex')
-    return this.streamsByDiscoveryKey.get(discoveryKey)
+    const core = this.corestore.get({ discoveryKey })
+    return core.peers.map(peer => peer.remotePublicKey)
+  }
+
+  watchPeers (discoveryKey, opts = {}) {
+    const core = this.corestore.get({ discoveryKey })
+    const watcher = new EventEmitter()
+    const firstPeers = this.listPeers(discoveryKey) || []
+    if (firstPeers) {
+      for (const remoteKey of firstPeers) {
+        opts.onjoin(remoteKey)
+      }
+    }
+    const joinedListener = (peer) => {
+      opts.onjoin(peer.remotePublicKey)
+    }
+    const leftListener = (peer) => {
+      opts.onleave(peer.remotePublicKey)
+    }
+    const close = () => {
+      core.removeListener('peer-add', joinedListener)
+      core.removeListener('peer-remove', leftListener)
+    }
+    if (opts.onjoin) core.on('peer-add', joinedListener)
+    if (opts.onleave) core.on('peer-remove', leftListener)
+    return close
   }
 }
 Peersockets.EXTENSION_PREFIX = 'peersockets/v0/'
