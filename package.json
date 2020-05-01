@@ -1,6 +1,6 @@
 {
   "name": "peersockets",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Directly connect to peers via hyperswarm (or an API-compatible alternative). ",
   "main": "index.js",
   "scripts": {
