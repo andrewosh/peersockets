@@ -200,8 +200,8 @@ test('can list peers for a discovery key', async t => {
 
   t.same(firstPeers.length, 1)
   t.same(secondPeers.length, 1)
-  t.true(firstPeers[0].equals(networker2.keyPair.publicKey))
-  t.true(secondPeers[0].equals(networker1.keyPair.publicKey))
+  t.true(firstPeers[0].key.equals(networker2.keyPair.publicKey))
+  t.true(secondPeers[0].key.equals(networker1.keyPair.publicKey))
 
   await cleanup([networker1, networker2])
   t.end()

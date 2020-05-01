@@ -122,11 +122,11 @@ class Peersockets extends EventEmitter {
   }
 
   leave (topicName) {
-    let topic = this.topicsByName.get(topicName)
-    if (topic) {
-    }
+    const topic = this.topicsByName.get(topicName)
+    if (!topic) return
     // Close the topic (this destroys every stream's per-topic extension)
     topic.close()
+    this.topicsByName.delete(topicName)
   }
 
   stop () {
@@ -139,10 +139,18 @@ class Peersockets extends EventEmitter {
 
   listPeers (discoveryKey) {
     if (!discoveryKey) {
-      return [...this.streamsByKey].map(([,stream]) => stream.remotePublicKey)
+      return [...this.streamsByKey].map(([,stream]) => peerInfo(stream))
     }
     const core = this.corestore.get({ discoveryKey })
-    return core.peers.map(peer => peer.remotePublicKey)
+    return core.peers.map(peerInfo)
+
+    function peerInfo (stream) {
+      return {
+        key: stream.remotePublicKey,
+        address: stream.remoteAddress,
+        type: stream.remoteType
+      }
+    }
   }
 
   watchPeers (discoveryKey, opts = {}) {
@@ -151,7 +159,7 @@ class Peersockets extends EventEmitter {
     const peerCounts = new Map()
     const firstPeers = this.listPeers(discoveryKey) || []
     if (firstPeers) {
-      for (const remoteKey of firstPeers) {
+      for (const { key: remoteKey } of firstPeers) {
         peerCounts.set(remoteKey.toString('hex', 1))
         opts.onjoin(remoteKey)
       }
