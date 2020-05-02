@@ -139,7 +139,7 @@ class Peersockets extends EventEmitter {
 
   listPeers (discoveryKey) {
     if (!discoveryKey) {
-      return [...this.streamsByKey].map(([,stream]) => peerInfo(stream))
+      return this.networker.streams.map(stream => peerInfo(stream))
     }
     const core = this.corestore.get({ discoveryKey })
     return core.peers.map(peerInfo)

@@ -23,7 +23,7 @@
   "devDependencies": {
     "@hyperswarm/dht": "^3.5.2",
     "corestore": "^5.1.1",
-    "corestore-swarm-networking": "^5.0.8",
+    "corestore-swarm-networking": "^5.2.0",
     "hypercore-crypto": "^1.0.0",
     "random-access-memory": "^3.1.1",
     "standard": "^14.3.3",
