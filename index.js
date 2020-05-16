@@ -173,6 +173,8 @@ class Peersockets extends EventEmitter {
       }, 0)
     }
     const leftListener = (peer) => {
+      // TODO: This should be public.
+      if (!peer._remoteOpened) return
       const remoteKey = peer.remotePublicKey
       updateMap(peerCounts, remoteKey.toString('hex'), old => {
         const updated = --old
@@ -181,10 +183,10 @@ class Peersockets extends EventEmitter {
       } , 0)
     }
     const close = () => {
-      core.removeListener('peer-add', joinedListener)
+      core.removeListener('peer-open', joinedListener)
       core.removeListener('peer-remove', leftListener)
     }
-    if (opts.onjoin) core.on('peer-add', joinedListener)
+    if (opts.onjoin) core.on('peer-open', joinedListener)
     if (opts.onleave) core.on('peer-remove', leftListener)
     return close
   }

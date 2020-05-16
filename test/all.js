@@ -238,14 +238,16 @@ test('can watch peers for a discovery key', async t => {
   const core3 = store3.get(core1.key)
   await networker3.join(discoveryKey, { announce: true, lookup: true })
 
-  await delay(100)
+  await delay(500)
+
   t.same(joinCount, 2)
   t.same(leaveCount, 0)
 
   await networker3.close()
   await networker2.close()
 
-  await delay(100)
+  await delay(500)
+
   t.same(joinCount, 2)
   t.same(leaveCount, 2)
 
