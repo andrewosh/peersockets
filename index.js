@@ -174,7 +174,7 @@ class Peersockets extends EventEmitter {
     }
     const leftListener = (peer) => {
       // TODO: This should be public.
-      if (!peer._remoteOpened) return
+      if (!peer.remoteOpened) return
       const remoteKey = peer.remotePublicKey
       updateMap(peerCounts, remoteKey.toString('hex'), old => {
         const updated = --old
