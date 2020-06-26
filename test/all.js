@@ -2,7 +2,7 @@ const test = require('tape')
 const dht = require('@hyperswarm/dht')
 const ram = require('random-access-memory')
 const hypercoreCrypto = require('hypercore-crypto')
-const SwarmNetworker = require('corestore-swarm-networking')
+const CorestoreNetworker = require('@corestore/networker')
 const HypercoreProtocol = require('hypercore-protocol')
 const Corestore = require('corestore')
 
@@ -21,8 +21,8 @@ test('static peers, single peer send', async t => {
 
   const dkey = hypercoreCrypto.randomBytes(32)
 
-  await networker1.join(dkey, { announce: true, lookup: true })
-  await networker2.join(dkey, { announce: true, lookup: true })
+  await networker1.configure(dkey, { announce: true, lookup: true })
+  await networker2.configure(dkey, { announce: true, lookup: true })
 
   const handle1 = ps1.join(topic)
   const handle2 = ps2.join(topic, {
@@ -54,8 +54,8 @@ test('static peers, multiple topics bidirectional send', async t => {
   const topic1 = 'test-topic-1'
   const topic2 = 'test-topic-2'
 
-  await networker1.join(sharedKey, { announce: true, lookup: true })
-  await networker2.join(sharedKey, { announce: true, lookup: true })
+  await networker1.configure(sharedKey, { announce: true, lookup: true })
+  await networker2.configure(sharedKey, { announce: true, lookup: true })
 
   // networker3 does not join the topic
   const ps1Topic1 = ps1.join(topic1, {
@@ -103,12 +103,12 @@ test('dynamic peer, single peer send', async t => {
   const sharedKey = hypercoreCrypto.randomBytes(32)
   const topic = 'test-topic-1'
 
-  await networker1.join(sharedKey, { announce: true, lookup: true })
+  await networker1.configure(sharedKey, { announce: true, lookup: true })
   const handle1 = ps1.join(topic)
 
   await delay(100)
 
-  await networker2.join(sharedKey, { announce: true, lookup: true })
+  await networker2.configure(sharedKey, { announce: true, lookup: true })
   const handle2 = ps2.join(topic, {
     onmessage: (remoteKey, msg) => {
       t.same(msg.toString('utf8'), 'hello world!')
@@ -132,13 +132,13 @@ test('can close a topic handle without closing the topic', async t => {
   const sharedKey = hypercoreCrypto.randomBytes(32)
   const topic = 'test-topic-1'
 
-  await networker1.join(sharedKey, { announce: true, lookup: true })
+  await networker1.configure(sharedKey, { announce: true, lookup: true })
   const handle1 = ps1.join(topic)
   const handle2 = ps1.join(topic)
 
   await delay(100)
 
-  await networker2.join(sharedKey, { announce: true, lookup: true })
+  await networker2.configure(sharedKey, { announce: true, lookup: true })
   const handle3 = ps2.join(topic, {
     onmessage: (remoteKey, msg) => {
       t.same(msg.toString('utf8'), 'hello world!')
@@ -163,8 +163,8 @@ test('leaving a topic removes the extension', async t => {
 
   const sharedKey = hypercoreCrypto.randomBytes(32)
   const topic = 'test-topic-1'
-  await networker1.join(sharedKey, { announce: true, lookup: true })
-  await networker2.join(sharedKey, { announce: true, lookup: true })
+  await networker1.configure(sharedKey, { announce: true, lookup: true })
+  await networker2.configure(sharedKey, { announce: true, lookup: true })
   const peerKey = networker2.keyPair.publicKey
   let errored = false
 
@@ -191,8 +191,8 @@ test('can list peers for a discovery key', async t => {
   const core1 = store1.default()
   const core2 = store2.get(core1.key)
 
-  await networker1.join(core1.discoveryKey, { announce: true, lookup: true })
-  await networker2.join(core2.discoveryKey, { announce: true, lookup: true })
+  await networker1.configure(core1.discoveryKey, { announce: true, lookup: true })
+  await networker2.configure(core2.discoveryKey, { announce: true, lookup: true })
   await delay(100)
 
   const firstPeers = await ps1.listPeers(core1.discoveryKey)
@@ -223,7 +223,7 @@ test('can watch peers for a discovery key', async t => {
   const core1 = store1.get()
   const discoveryKey = hypercoreCrypto.discoveryKey(core1.key)
 
-  await networker1.join(discoveryKey, { announce: true, lookup: true })
+  await networker1.configure(discoveryKey, { announce: true, lookup: true })
   let watcher = ps1.watchPeers(discoveryKey, {
     onjoin: (remoteKey) => {
       t.true(joins[joinCount++].equals(remoteKey))
@@ -234,9 +234,9 @@ test('can watch peers for a discovery key', async t => {
   })
 
   const core2 = store2.get(core1.key)
-  await networker2.join(discoveryKey, { announce: true, lookup: true })
+  await networker2.configure(discoveryKey, { announce: true, lookup: true })
   const core3 = store3.get(core1.key)
-  await networker3.join(discoveryKey, { announce: true, lookup: true })
+  await networker3.configure(discoveryKey, { announce: true, lookup: true })
 
   await delay(500)
 
@@ -272,7 +272,7 @@ test('stops watching peers when call is closed', async t => {
   const core1 = store1.get()
   const discoveryKey = hypercoreCrypto.discoveryKey(core1.key)
 
-  await networker1.join(discoveryKey, { announce: true, lookup: true })
+  await networker1.configure(discoveryKey, { announce: true, lookup: true })
   let watcher = ps1.watchPeers(discoveryKey, {
     onjoin: (remoteKey) => {
       joinSet.add(remoteKey.toString('hex'))
@@ -283,9 +283,9 @@ test('stops watching peers when call is closed', async t => {
   })
 
   const core2 = store2.get(core1.key)
-  await networker2.join(discoveryKey, { announce: true, lookup: true })
+  await networker2.configure(discoveryKey, { announce: true, lookup: true })
   const core3 = store3.get(core1.key)
-  await networker3.join(discoveryKey, { announce: true, lookup: true })
+  await networker3.configure(discoveryKey, { announce: true, lookup: true })
 
   await delay(100)
   t.same(joinSet.size, 2)
@@ -325,8 +325,8 @@ test('connections persist across deduplication events', async t => {
 
   const dkey = hypercoreCrypto.randomBytes(32)
 
-  await networker1.join(dkey, { announce: true, lookup: true })
-  await networker2.join(dkey, { announce: true, lookup: true })
+  await networker1.configure(dkey, { announce: true, lookup: true })
+  await networker2.configure(dkey, { announce: true, lookup: true })
 
   const handle1 = ps1.join(topic, {
     onmessage: (remoteKey, msg) => {
@@ -352,7 +352,7 @@ test('connections persist across deduplication events', async t => {
 
   await delay(100)
   // This should trigger a duplication event in ps1
-  await networker3.join(dkey, { announce: true, lookup: true })
+  await networker3.configure(dkey, { announce: true, lookup: true })
   await delay(100)
 
   // Since the ps2 connection is deduped, this will go to ps3.
@@ -381,7 +381,7 @@ async function create (opts = {}) {
   }
   const store =  new Corestore(ram)
   await store.ready()
-  const networker = new SwarmNetworker(store,  { ...opts, bootstrap: `localhost:${BOOTSTRAP_PORT}` })
+  const networker = new CorestoreNetworker(store,  { ...opts, bootstrap: `localhost:${BOOTSTRAP_PORT}` })
   return { store, networker }
 }
 
