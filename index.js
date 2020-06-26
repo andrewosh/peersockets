@@ -135,6 +135,7 @@ class Peersockets extends EventEmitter {
     this.networker.removeListener('stream-closed', this._leaveListener)
     this._joinListener = null
     this._leaveListener = null
+    this.streamsByKey.clear()
   }
 
   listPeers (discoveryKey) {
@@ -173,7 +174,6 @@ class Peersockets extends EventEmitter {
       }, 0)
     }
     const leftListener = (peer) => {
-      // TODO: This should be public.
       if (!peer.remoteOpened) return
       const remoteKey = peer.remotePublicKey
       updateMap(peerCounts, remoteKey.toString('hex'), old => {

@@ -304,7 +304,68 @@ test('stops watching peers when call is closed', async t => {
   t.same(leaveSet.size, firstLeaveSize)
   t.same(joinSet.size, firstJoinSize)
 
-  await cleanup([networker1])
+  await cleanup([networker1, networker2, networker3])
+  t.end()
+})
+
+test('connections persist across deduplication events', async t => {
+  const { networker: networker1 } = await create()
+  const { networker: networker2 } = await create()
+  const { networker: networker3 } = await create({
+    keyPair: networker2.keyPair
+  })
+
+  const ps1 = new Peersockets(networker1)
+  const ps2 = new Peersockets(networker2)
+  const ps3 = new Peersockets(networker3)
+  const topic = 'test-topic-1'
+  let ps1Seen = 0
+  let ps2Seen = 0
+  let ps3Seen = 0
+
+  const dkey = hypercoreCrypto.randomBytes(32)
+
+  await networker1.join(dkey, { announce: true, lookup: true })
+  await networker2.join(dkey, { announce: true, lookup: true })
+
+  const handle1 = ps1.join(topic, {
+    onmessage: (remoteKey, msg) => {
+      t.same(msg.toString('utf8'), 'hello world!')
+      ps1Seen++
+    }
+  })
+  const handle2 = ps2.join(topic, {
+    onmessage: (remoteKey, msg) => {
+      t.same(msg.toString('utf8'), 'hello world!')
+      ps2Seen++
+    }
+  })
+  const handle3 = ps3.join(topic, {
+    onmessage: (remoteKey, msg) => {
+      t.same(msg.toString('utf8'), 'hello world!')
+      ps3Seen++
+    }
+  })
+
+  await delay(100)
+  handle1.send(networker2.keyPair.publicKey, 'hello world!')
+
+  await delay(100)
+  // This should trigger a duplication event in ps1
+  await networker3.join(dkey, { announce: true, lookup: true })
+  await delay(100)
+
+  // Since the ps2 connection is deduped, this will go to ps3.
+  handle1.send(networker2.keyPair.publicKey, 'hello world!')
+  await delay(100)
+
+  handle3.send(networker1.keyPair.publicKey, 'hello world!')
+  await delay(100)
+
+  await cleanup([networker1, networker2, networker3])
+  t.same(ps1Seen, 1)
+  t.same(ps2Seen, 1)
+  t.same(ps3Seen, 1)
   t.end()
 })
 
