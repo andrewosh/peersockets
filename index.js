@@ -89,61 +89,6 @@ class Peersockets extends EventEmitter {
     }
     this.topicsByName.clear()
   }
-
-  /*
-  listPeers (discoveryKey) {
-    if (!discoveryKey) {
-      return this.networker.streams.map(stream => peerInfo(stream))
-    }
-    const core = this.corestore.get({ discoveryKey })
-    return core.peers.map(peerInfo)
-
-    function peerInfo (stream) {
-      return {
-        key: stream.remotePublicKey,
-        address: stream.remoteAddress,
-        type: stream.remoteType
-      }
-    }
-  }
-
-  watchPeers (discoveryKey, opts = {}) {
-    const core = this.corestore.get({ discoveryKey })
-    const watcher = new EventEmitter()
-    const peerCounts = new Map()
-    const firstPeers = this.listPeers(discoveryKey) || []
-    if (firstPeers) {
-      for (const { key: remoteKey } of firstPeers) {
-        peerCounts.set(remoteKey.toString('hex', 1))
-        opts.onjoin(remoteKey)
-      }
-    }
-    const joinedListener = (peer) => {
-      const remoteKey = peer.remotePublicKey
-      updateMap(peerCounts, remoteKey.toString('hex'), old => {
-        const updated = ++old
-        if (updated === 1) opts.onjoin(remoteKey)
-        return updated
-      }, 0)
-    }
-    const leftListener = (peer) => {
-      if (!peer.remoteOpened) return
-      const remoteKey = peer.remotePublicKey
-      updateMap(peerCounts, remoteKey.toString('hex'), old => {
-        const updated = --old
-        if (!updated) opts.onleave(remoteKey)
-        return updated
-      } , 0)
-    }
-    const close = () => {
-      core.removeListener('peer-open', joinedListener)
-      core.removeListener('peer-remove', leftListener)
-    }
-    if (opts.onjoin) core.on('peer-open', joinedListener)
-    if (opts.onleave) core.on('peer-remove', leftListener)
-    return close
-  }
-  */
 }
 Peersockets.EXTENSION_PREFIX = 'peersockets/v0/'
 
