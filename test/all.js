@@ -16,27 +16,31 @@ test('static peers, single peer send', async t => {
   const { networker: networker2 } = await create()
   const ps1 = new Peersockets(networker1)
   const ps2 = new Peersockets(networker2)
-  let seen = 0
   const topic = 'test-topic-1'
 
   const dkey = hypercoreCrypto.randomBytes(32)
-
   await networker1.configure(dkey, { announce: true, lookup: true })
-  await networker2.configure(dkey, { announce: true, lookup: true })
 
   const handle1 = ps1.join(topic)
-  const handle2 = ps2.join(topic, {
-    onmessage: (remoteKey, msg) => {
-      t.same(msg.toString('utf8'), 'hello world!')
-      seen++
-    }
+  let seenProm = new Promise(resolve => {
+    ps2.join(topic, {
+      onmessage: (msg, peer) => {
+        t.same(msg.toString('utf8'), 'hello world!')
+        return resolve()
+      }
+    })
   })
 
-  await delay(100)
-  handle1.send(networker2.keyPair.publicKey, 'hello world!')
+  networker1.on('peer-add', peer => {
+    handle1.send('hello world!', peer)
+  })
+
+  await networker2.configure(dkey, { announce: true, lookup: true })
+
+  await seenProm
+  t.pass('single message was seen')
 
   await cleanup([networker1, networker2])
-  t.same(seen, 1)
   t.end()
 })
 
@@ -57,36 +61,37 @@ test('static peers, multiple topics bidirectional send', async t => {
   await networker1.configure(sharedKey, { announce: true, lookup: true })
   await networker2.configure(sharedKey, { announce: true, lookup: true })
 
-  // networker3 does not join the topic
   const ps1Topic1 = ps1.join(topic1, {
-    onmessage: (remoteKey, msg) => {
+    onmessage: (msg, peer) => {
       t.same(msg.toString('utf8'), 'topic1 to ps1')
       seen++
     }
   })
   const ps1Topic2 = ps1.join(topic2, {
-    onmessage: (remoteKey, msg) => {
+    onmessage: (msg, peer) => {
       t.same(msg.toString('utf8'), 'topic2 to ps1')
       seen++
     }
   })
   const ps2Topic1 = ps2.join(topic1, {
-    onmessage: (remoteKey, msg) => {
+    onmessage: (msg, peer) => {
       t.same(msg.toString('utf8'), 'topic1 to ps2')
       seen++
     }
   })
   const ps2Topic2 = ps2.join(topic2, {
-    onmessage: (remoteKey, msg) => {
+    onmessage: (msg, peer) => {
       t.same(msg.toString('utf8'), 'topic2 to ps2')
       seen++
     }
   })
 
-  ps1Topic1.send(ps2Key, 'topic1 to ps2')
-  ps1Topic2.send(ps2Key, 'topic2 to ps2')
-  ps2Topic1.send(ps1Key, 'topic1 to ps1')
-  ps2Topic2.send(ps1Key, 'topic2 to ps1')
+  await delay(100)
+
+  ps1Topic1.send('topic1 to ps2', findPeer(networker1.peers, ps2Key))
+  ps1Topic2.send('topic2 to ps2', findPeer(networker1.peers, ps2Key))
+  ps2Topic1.send('topic1 to ps1', findPeer(networker2.peers, ps1Key))
+  ps2Topic2.send('topic2 to ps1', findPeer(networker2.peers, ps1Key))
 
   await cleanup([networker1, networker2])
   t.same(seen, 4)
@@ -104,18 +109,19 @@ test('dynamic peer, single peer send', async t => {
   const topic = 'test-topic-1'
 
   await networker1.configure(sharedKey, { announce: true, lookup: true })
-  const handle1 = ps1.join(topic)
-
-  await delay(100)
-
   await networker2.configure(sharedKey, { announce: true, lookup: true })
+
+  const handle1 = ps1.join(topic)
   const handle2 = ps2.join(topic, {
-    onmessage: (remoteKey, msg) => {
+    onmessage: (msg, peer) => {
       t.same(msg.toString('utf8'), 'hello world!')
       seen++
     }
   })
-  handle1.send(networker2.keyPair.publicKey, 'hello world!')
+
+  await delay(100)
+
+  handle1.send('hello world!', findPeer(networker1.peers, networker2.keyPair.publicKey))
 
   await cleanup([networker1, networker2])
   t.same(seen, 1)
@@ -133,21 +139,22 @@ test('can close a topic handle without closing the topic', async t => {
   const topic = 'test-topic-1'
 
   await networker1.configure(sharedKey, { announce: true, lookup: true })
+  await networker2.configure(sharedKey, { announce: true, lookup: true })
   const handle1 = ps1.join(topic)
   const handle2 = ps1.join(topic)
-
-  await delay(100)
-
-  await networker2.configure(sharedKey, { announce: true, lookup: true })
   const handle3 = ps2.join(topic, {
-    onmessage: (remoteKey, msg) => {
+    onmessage: (msg, peer) => {
       t.same(msg.toString('utf8'), 'hello world!')
       seen++
     }
   })
-  handle1.send(networker2.keyPair.publicKey, 'hello world!')
+
+  await delay(100)
+
+  handle1.send('hello world!', findPeer(networker1.peers, networker2.keyPair.publicKey))
   handle1.close()
-  handle2.send(networker2.keyPair.publicKey, 'hello world!')
+  handle2.send('hello world!', findPeer(networker1.peers, networker2.keyPair.publicKey))
+
   await delay(100)
 
   await cleanup([networker1, networker2])
@@ -168,8 +175,10 @@ test('leaving a topic removes the extension', async t => {
   const peerKey = networker2.keyPair.publicKey
   let errored = false
 
+  await delay(100)
+
   const handle1 = ps1.join(topic)
-  handle1.send(peerKey, 'this should not error')
+  handle1.send('this should not error', findPeer(networker1.peers, peerKey))
   ps1.leave(topic)
   try {
     handle1.send(peerKey, 'this should error')
@@ -182,7 +191,7 @@ test('leaving a topic removes the extension', async t => {
   t.end()
 })
 
-test('can list peers for a discovery key', async t => {
+test.skip('can list peers for a discovery key', async t => {
   const { store: store1, networker: networker1 } = await create()
   const { store: store2, networker: networker2 } = await create()
   const ps1 = new Peersockets(networker1)
@@ -207,7 +216,7 @@ test('can list peers for a discovery key', async t => {
   t.end()
 })
 
-test('can watch peers for a discovery key', async t => {
+test.skip('can watch peers for a discovery key', async t => {
   const { store: store1, networker: networker1 } = await create()
   const { store: store2, networker: networker2 } = await create()
   const { store: store3, networker: networker3 } = await create()
@@ -255,7 +264,7 @@ test('can watch peers for a discovery key', async t => {
   t.end()
 })
 
-test('stops watching peers when call is closed', async t => {
+test.skip('stops watching peers when call is closed', async t => {
   const { store: store1, networker: networker1 } = await create()
   const { store: store2, networker: networker2 } = await create()
   const { store: store3, networker: networker3 } = await create()
@@ -329,45 +338,52 @@ test('connections persist across deduplication events', async t => {
   await networker2.configure(dkey, { announce: true, lookup: true })
 
   const handle1 = ps1.join(topic, {
-    onmessage: (remoteKey, msg) => {
+    onmessage: msg => {
       t.same(msg.toString('utf8'), 'hello world!')
       ps1Seen++
     }
   })
   const handle2 = ps2.join(topic, {
-    onmessage: (remoteKey, msg) => {
+    onmessage: msg => {
       t.same(msg.toString('utf8'), 'hello world!')
       ps2Seen++
     }
   })
   const handle3 = ps3.join(topic, {
-    onmessage: (remoteKey, msg) => {
+    onmessage: msg => {
       t.same(msg.toString('utf8'), 'hello world!')
       ps3Seen++
     }
   })
 
   await delay(100)
-  handle1.send(networker2.keyPair.publicKey, 'hello world!')
+  handle1.send('hello world!', findPeer(networker1.peers, networker2.keyPair.publicKey))
 
   await delay(100)
   // This should trigger a duplication event in ps1
   await networker3.configure(dkey, { announce: true, lookup: true })
   await delay(100)
 
-  // Since the ps2 connection is deduped, this will go to ps3.
-  handle1.send(networker2.keyPair.publicKey, 'hello world!')
+  // Depending on the keyPair, this might trigger a deduplication event.
+  // Regardless of which connection is deduped, networker2 and networker3 should see at most 2 messages between them.
+  handle1.send('hello world!', findPeer(networker1.peers, networker2.keyPair.publicKey))
   await delay(100)
 
-  handle3.send(networker1.keyPair.publicKey, 'hello world!')
+  handle3.send('hello world!', findPeer(networker3.peers, networker1.keyPair.publicKey))
   await delay(100)
 
   await cleanup([networker1, networker2, networker3])
   t.same(ps1Seen, 1)
-  t.same(ps2Seen, 1)
-  t.same(ps3Seen, 1)
+  t.true(ps2Seen + ps3Seen === 2)
   t.end()
 })
+
+function findPeer (peers, remotePublicKey) {
+  for (const peer of peers) {
+    if (peer.remotePublicKey && peer.remotePublicKey.equals(remotePublicKey)) return peer
+  }
+  return null
+}
 
 async function create (opts = {}) {
   if (!bootstrap) {

@@ -9,43 +9,17 @@ class TopicHandle {
   close () {
     this._topic.closeHandle(this)
   }
-  send (remoteKey, msg) {
-    if (Buffer.isBuffer(remoteKey)) remoteKey = remoteKey.toString('hex')
-    this._topic.send(remoteKey, msg)
+  send (msg, peer) {
+    this._topic.send(msg, peer)
   }
 }
 
 class Topic extends EventEmitter {
-  constructor (name) {
+  constructor (name, ext) {
     super()
     this.name = name
-    this._extensions = new Map()
+    this._extension = ext
     this._handles = []
-  }
-
-  registerExtension (stream) {
-    const remoteKey = stream.remotePublicKey
-    const keyString = remoteKey.toString('hex')
-    const handlers = {
-      onmessage: (msg) => {
-        for (const handle of this._handles) {
-          if (handle.onmessage) handle.onmessage(remoteKey, msg)
-        }
-      },
-      onerror: (err) => {
-        this.emit('topic-error', err, remoteKey)
-      }
-    }
-    const extension = stream.registerExtension(Peersockets.EXTENSION_PREFIX + this.name, handlers)
-    this._extensions.set(keyString, extension)
-    return extension
-  }
-
-  removeExtension (remoteKey) {
-    const extension = this._extensions.get(remoteKey)
-    if (!extension) return
-    extension.destroy()
-    this._extensions.delete(remoteKey)
   }
 
   createHandle (opts = {}) {
@@ -59,16 +33,18 @@ class Topic extends EventEmitter {
     this._handles.splice(this._handles.indexOf(handle), 1)
   }
 
-  send (remoteKey, msg) {
-    const extension = this._extensions.get(remoteKey)
-    if (!extension) throw new Error('Topic extension not registered for peer.')
-    extension.send(msg)
+  onmessage (message, from) {
+    for (const handle of this._handles) {
+      if (handle.onmessage) handle.onmessage(message, from)
+    }
+  }
+
+  send (msg, peer) {
+    this._extension.send(msg, peer)
   }
 
   close () {
-    for (const [remoteKey, extension] of this._extensions) {
-      extension.destroy()
-    }
+    this._extension.destroy()
     for (const handle of this._handles) {
       if (handle.onclose) handle.onclose(null)
     }
@@ -82,42 +58,19 @@ class Peersockets extends EventEmitter {
     this.corestore = networker.corestore
 
     this.topicsByName = new Map()
-    this.streamsByKey = new Map()
-
-    this._joinListener = this._onjoin.bind(this)
-    this._leaveListener = this._onleave.bind(this)
-    this.networker.on('handshake', this._joinListener)
-    this.networker.on('stream-closed', this._leaveListener)
-  }
-
-  _onjoin (stream, info) {
-    const remoteKey = stream.remotePublicKey
-    const keyString = remoteKey.toString('hex')
-    this.streamsByKey.set(keyString, stream)
-    // Register all topic extensions on the new stream
-    for (const [, topic] of this.topicsByName) {
-      topic.registerExtension(stream)
-    }
-  }
-
-  _onleave (stream, info, finishedHandshake) {
-    if (!finishedHandshake || (info && info.duplicate)) return
-    // If the stream never made it through the handshake. abort.
-    const keyString = stream.remotePublicKey.toString('hex')
-    for (const [, topic] of this.topicsByName) {
-      topic.removeExtension(keyString)
-    }
   }
 
   join (topicName, opts) {
     let topic = this.topicsByName.get(topicName)
     if (topic) return topic.createHandle(opts)
-    topic = new Topic(topicName)
+    const extension = this.networker.registerExtension({
+      name: Peersockets.EXTENSION_PREFIX + topicName,
+      onmessage: (message, from) => {
+        topic.onmessage(message, from)
+      }
+    })
+    topic = new Topic(topicName, extension)
     this.topicsByName.set(topicName, topic)
-    // Register the topic extension on all streams.
-    for (const [,stream] of this.streamsByKey) {
-      topic.registerExtension(stream)
-    }
     return topic.createHandle(opts)
   }
 
@@ -131,13 +84,13 @@ class Peersockets extends EventEmitter {
 
   stop () {
     if (!this._joinListener) return
-    this.networker.removeListener('handshake', this._joinListener)
-    this.networker.removeListener('stream-closed', this._leaveListener)
-    this._joinListener = null
-    this._leaveListener = null
-    this.streamsByKey.clear()
+    for (const topic of this.topicsByName.values()) {
+      topic.close()
+    }
+    this.topicsByName.clear()
   }
 
+  /*
   listPeers (discoveryKey) {
     if (!discoveryKey) {
       return this.networker.streams.map(stream => peerInfo(stream))
@@ -190,18 +143,8 @@ class Peersockets extends EventEmitter {
     if (opts.onleave) core.on('peer-remove', leftListener)
     return close
   }
+  */
 }
 Peersockets.EXTENSION_PREFIX = 'peersockets/v0/'
-
-function upsert (map, key, createFn) {
-  if (map.has(key)) return map.get(key)
-  let value = createFn()
-  map.set(key, value)
-  return value
-}
-
-function updateMap (map, key, updateFn, defaultValue) {
-  map.set(key, updateFn(map.get(key) || defaultValue))
-}
 
 module.exports = Peersockets
