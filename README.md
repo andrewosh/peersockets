@@ -23,9 +23,8 @@ const sockets = new Peersockets(networker)
 const friendKey = ...
 
 const handle = sockets.join('my-topic', {
-  onmessage: (remoteKey, msg) => {
-   // remoteKey is the remote peer's NOISE key.
-   console.log(`I got message ${msg} from ${remoteKey.toString('hex')}`)
+  onmessage: (msg, peer) => {
+   console.log(`I got message ${msg} from ${peer.remotePublicKeytoString('hex')}`)
   }
 })
 
@@ -36,7 +35,7 @@ handle.send(friendKey, 'hello!')
 #### `const socket = new Peersockets(networker)`
 Creates a new Peersockets instance. 
 
-* `networker` is an instance of [`corestore-swarm-networking`](https://github.com/andrewosh/corestore-swarm-networking)).
+* `networker` is an instance of [`@corestore/networker`](https://github.com/andrewosh/corestore-networker)).
 
 #### `const handler = socket.join(topicName, opts = { onmessage, onclose })`
 Joins a new topic. If this is the first time the topic has been joined, a topic extension will be registered on every connected peer. Otherwise the previous topic/extension will be reused.
@@ -53,16 +52,11 @@ Close all topic handlers for `topicName` and unregister the topic's extension fr
 
 If a `topicName` is not specified, all topics will be left.
 
-#### `socket.listPeers([discoveryKey])`
-List all peers that are swarming `discoveryKey`. This method is useful if you want to exchange messages with other peers who have a specific hypercore.
-
-If `discoveryKey` is not specified, all peers will be listed.
-
-#### `topicHandle.send(remoteKey, msg)`
-Send a message to `remoteKey`.
+#### `topicHandle.send(msg, peer)`
+Send a message to `peer`.
 
 `msg` is a string or a Buffer.
-`remoteKey` is a NOISE public key
+`peer` is a `@corestore/networker` Peer instance that can be obtained from `networker.peers`.
 
 #### `topicHandle.close()`
 Close the handle when you're finished with it. This will not unregister the topic extension.
