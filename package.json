@@ -1,6 +1,6 @@
 {
   "name": "peersockets",
-  "version": "0.3.4",
+  "version": "1.0.0",
   "description": "Directly connect to peers via hyperswarm (or an API-compatible alternative). ",
   "main": "index.js",
   "scripts": {
@@ -21,7 +21,7 @@
   },
   "homepage": "https://github.com/andrewosh/peersockets#readme",
   "devDependencies": {
-    "@corestore/networker": "^0.0.0",
+    "@corestore/networker": "^0.0.1",
     "@hyperswarm/dht": "^3.5.2",
     "corestore": "^5.1.1",
     "hypercore-crypto": "^2.0.0",
